@@ -9,19 +9,19 @@ class MMU:
 
         # 2KB Internal RAM
         if (address >= 0x0000 and address <= 0x07FF):
-            raise NotImplementedError()
+            return self._system.ram[address]
 
         # 2KB Internal RAM Mirror #1
         if (address >= 0x0800 and address <= 0x0FFF):
-            raise NotImplementedError()
+            return self._system.ram[address-0x0800]
 
         # 2KB Internal RAM Mirror #2
         if (address >= 0x1000 and address <= 0x17FF):
-            raise NotImplementedError()
+            return self._system.ram[address-0x1000]
 
         # 2KB Internal RAM Mirror #3
         if (address >= 0x1800 and address <= 0x1FFF):            
-            raise NotImplementedError()
+            return self._system.ram[address-0x1800]
 
         # PPU registers
         if (address >= 0x2000 and address <= 0x2007):

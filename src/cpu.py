@@ -8,7 +8,7 @@ class CPU:
         # Program Counter 16-bit, default to value located at the reset vector address.
         self._pc = self._system.mmu.read_word(self.VECTOR_RESET)
         # Stack Pointer 8-bit, ranges from 0x0100 to 0x01FF
-        self._sp = 0x01FF
+        self._sp = 0xFF
         # Accumulator 8-bit
         self._a = 0x00
         # Index Register X 8-bit
@@ -25,15 +25,22 @@ class CPU:
         self._interrupt_disable = True   
         # Break Command - Set when a BRK instruction is hit and an interrupt has been generated to process it.
         self._break_command = False
+        # Decimal Mode
+        self._decimal_mode = False
         # Overflow - Set during arithmetic operations if the result has yielded an invalid 2's compliment result.
         self._overflow = False
         # Negative - Set if the result of the last operation had bit 7 set to a one.
         self._negative = False
 
+        # Reset clock
+        self.clock = 0
+
+        # Reset previous instruction cycle count
+        self.instruction_cycles = 0
+
     def step(self):
         # Fetch next instruction.
-        op_code = self._system.mmu.read_byte(self._pc) # TODO: Save this instruction as a class variable for reference outside of the step?
-        self._pc += 1
+        op_code = self._get_next_byte()
         print(f"OP CODE: {hex(op_code)}")
 
         # Decode op code.
@@ -42,43 +49,105 @@ class CPU:
         # Execute instruction.
         instruction(op_code)
 
-        # TODO: Track last instruction clock cycles and overall CPU cycles (mask with 0xFFFFFFFF)
+        # Update CPU clock with instruction cycles.
+        self.clock += self.instruction_cycles
+        self.clock &= 0xFFFFFFFF
 
     def decode_instruction(self, op_code):
         instructions = {
-            # 0x69: self.ADC,
-            # 0x65: self.ADC,
-            # 0x75: self.ADC,
-            # 0x6D: self.ADC,
-            # 0x7D: self.ADC,
-            # 0x79: self.ADC,
-            # 0x61: self.ADC,
-            # 0x71: self.ADC,
-            
-            # 0x29: self.AND,
-            # 0x25: self.AND,
-            # 0x35: self.AND,
-            # 0x2D: self.AND,
-            # 0x3D: self.AND,
-            # 0x39: self.AND,
-            # 0x21: self.AND,
-            # 0x31: self.AND,
-
-            # 0x0A: self.ASL,
-            # 0x06: self.ASL,
-            # 0x16: self.ASL,
-            # 0x0E: self.ASL,
-            # 0x1E: self.ASL,
-
-            # 0x90: self.BCC,
+            0x69: self.ADC, 0x65: self.ADC, 0x75: self.ADC, 0x6D: self.ADC, 0x7D: self.ADC, 0x79: self.ADC, 0x61: self.ADC, 0x71: self.ADC,       
+            0x29: self.AND, 0x25: self.AND, 0x35: self.AND, 0x2D: self.AND, 0x3D: self.AND, 0x39: self.AND, 0x21: self.AND, 0x31: self.AND,
+            0x0A: self.ASL, 0x06: self.ASL, 0x16: self.ASL, 0x0E: self.ASL, 0x1E: self.ASL,
+            0x90: self.BCC, 0xB0: self.BCS, 0xF0: self.BEQ,
+            0x24: self.BIT, 0x2C: self.BIT,
+            0x30: self.BMI, 0xD0: self.BNE, 0x10: self.BPL, 0x00: self.BRK, 0x50: self.BVC, 0x70: self.BVS,
+            0x18: self.CLC, 0xD8: self.CLD, 0x58: self.CLI, 0xB8: self.CLV,
+            0xC9: self.CMP, 0xC5: self.CMP, 0xD5: self.CMP, 0xCD: self.CMP, 0xDD: self.CMP, 0xD9: self.CMP, 0xC1: self.CMP, 0xD1: self.CMP,
+            0xE0: self.CPX, 0xE4: self.CPX, 0xEC: self.CPX,
+            0xC0: self.CPY, 0xC4: self.CPY, 0xCC: self.CPY, 
+            0xC6: self.DEC, 0xD6: self.DEC, 0xCE: self.DEC, 0xDE: self.DEC, 0xCA: self.DEX, 0x88: self.DEY,
+            0x49: self.EOR, 0x45: self.EOR, 0x55: self.EOR, 0x4D: self.EOR, 0x5D: self.EOR, 0x59: self.EOR, 0x41: self.EOR, 0x51: self.EOR,
+            0xE6: self.INC, 0xF6: self.INC, 0xEE: self.INC, 0xFE: self.INC, 0xE8: self.INX, 0xC8: self.INY,
+            0x4C: self.JMP, 0x6C: self.JMP, 0x20: self.JSR,
+            0xA9: self.LDA, 0xA5: self.LDA, 0xB5: self.LDA, 0xAD: self.LDA, 0xBD: self.LDA, 0xB9: self.LDA, 0xA1: self.LDA, 0xB1: self.LDA,
+            0xA2: self.LDX, 0xA6: self.LDX, 0xB6: self.LDX, 0xAE: self.LDX, 0xBE: self.LDX, 
+            0xA0: self.LDY, 0xA4: self.LDY, 0xB4: self.LDY, 0xAC: self.LDY, 0xBC: self.LDY, 
+            0x4A: self.LSR, 0x46: self.LSR, 0x56: self.LSR, 0x4E: self.LSR, 0x5E: self.LSR, 
+            0xEA: self.NOP,
+            0x09: self.ORA, 0x05: self.ORA, 0x15: self.ORA, 0x0D: self.ORA, 0x1D: self.ORA, 0x19: self.ORA, 0x01: self.ORA, 0x11: self.ORA, 
+            0x48: self.PHA, 0x08: self.PHP, 0x68: self.PLA, 0x28: self.PLP,
+            0x2A: self.ROL, 0x26: self.ROL, 0x36: self.ROL, 0x2E: self.ROL, 0x3E: self.ROL, 
+            0x6A: self.ROR, 0x66: self.ROR, 0x76: self.ROR, 0x6E: self.ROR, 0x7E: self.ROR, 
+            0x40: self.RTI, 0x60: self.RTS,
+            0xE9: self.SBC, 0xE5: self.SBC, 0xF5: self.SBC, 0xED: self.SBC, 0xFD: self.SBC, 0xF9: self.SBC, 0xE1: self.SBC, 0xF1: self.SBC, 
+            0x38: self.SEC, 0xF8: self.SED, 0x78: self.SEI,
+            0x85: self.STA, 0x95: self.STA, 0x8D: self.STA, 0x9D: self.STA, 0x99: self.STA, 0x81: self.STA, 0x91: self.STA, 
+            0x86: self.STX, 0x96: self.STX, 0x8E: self.STX, 
+            0x84: self.STY, 0x94: self.STY, 0x8C: self.STY, 
+            0xAA: self.TAX, 0xA8: self.TAY, 0xBA: self.TSX, 0x8A: self.TXA, 0x9A: self.TXS, 0x98: self.TYA
         }
         instruction = instructions.get(op_code, None)
         if (instruction == None):
             raise RuntimeError(f"No instruction found: {hex(op_code)}")
         return instruction
 
+    def _get_next_byte(self):
+        value = self._system.mmu.read_byte(self._pc)
+        self._pc += 1
+        return value
+
+    def _get_next_word(self):
+        lo = self._get_next_byte()
+        hi = self._get_next_byte()
+        return (hi<<8)+lo
+
     ###############################################################################
-    # Op Codes
+    # Address Mode Helpers
+    ###############################################################################
+    def _get_address_at_zeropage(self):
+        return self._get_next_byte()
+
+    def _get_address_at_zeropage_x(self):
+        return (self._get_next_byte() + self._x)&0xFF
+
+    def _get_address_at_absolute(self):
+        return self._get_next_word()
+
+    def _get_address_at_absolute_x(self):
+        return self._get_next_word() + self._x
+
+    def _get_address_at_absolute_y(self):
+        return self._get_next_word() + self._y
+
+    def _get_address_at_indirect_x(self):
+        return self._system.mmu.read_word((self._get_next_byte()+self._x)&0xFF)
+
+    def _get_address_at_indirect_y(self):
+        return self._system.mmu.read_word(self._get_next_byte())+self._y
+
+    def _get_value_at_zeropage(self):
+        return self._system.mmu.read_byte(self._get_address_at_zeropage())
+
+    def _get_value_at_zeropage_x(self):
+        return self._system.mmu.read_byte(self._get_address_at_zeropage_x())
+
+    def _get_value_at_absolute(self):
+        return self._system.mmu.read_byte(self._get_address_at_absolute())
+
+    def _get_value_at_absolute_x(self):
+        return self._system.mmu.read_byte(self._get_address_at_absolute_x())
+
+    def _get_value_at_absolute_y(self):
+        return self._system.mmu.read_byte(self._get_address_at_absolute_y())
+
+    def _get_value_at_indirect_x(self):
+        return self._system.mmu.read_byte(self._get_address_at_indirect_x())
+
+    def _get_value_at_indirect_y(self):
+        return self._system.mmu.read_byte(self._get_address_at_indirect_y())
+
+    ###############################################################################
+    # Instructions
     ###############################################################################
     def ADC(self, op_code):
         # Add Memory to Accumulator with Carry    
@@ -86,7 +155,7 @@ class CPU:
         #                                  + + + - - +
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     ADC #oper     69    2     2
+        # immediate     ADC #oper     69    2     2
         # zeropage      ADC oper      65    2     3
         # zeropage,X    ADC oper,X    75    2     4
         # absolute      ADC oper      6D    3     4
@@ -94,7 +163,45 @@ class CPU:
         # absolute,Y    ADC oper,Y    79    3     4*
         # (indirect,X)  ADC (oper,X)  61    2     6
         # (indirect),Y  ADC (oper),Y  71    2     5*
-        raise NotImplementedError()
+        value = None
+        if (op_code == 0x69): # immediate
+            value = self._get_next_byte()
+            self.instruction_cycles = 2
+        elif (op_code == 0x65): # zeropage
+            value = self._get_value_at_zeropage()
+            self.instruction_cycles = 3
+        elif (op_code == 0x75): # zeropage,X
+            value = self._get_value_at_zeropage_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0x6D): # absolute
+            value = self._get_value_at_absolute()
+            self.instruction_cycles = 4
+        elif (op_code == 0x7D): # absolute,X
+            value = self._get_value_at_absolute_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0x79): # absolute,Y
+            value = self._get_value_at_absolute_y()
+            self.instruction_cycles = 4
+        elif (op_code == 0x61): # (indirect,X)
+            value = self._get_value_at_indirect_x()
+            self.instruction_cycles = 6
+        elif (op_code == 0x71): # (indirect),Y
+            value = self._get_value_at_indirect_y()
+            self.instruction_cycles = 5
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        result = self._a + value + (1 if self._carry == True else 0)
+
+        self._carry = result > 0xFF
+
+        # More info on source: https://stackoverflow.com/a/29224684
+        self._overflow = ~(self._a ^ value) & (a ^ result) & 0x80
+
+        self._a = result&0xFF
+
+        self._negative = (self._a>>7) == 1
+        self._zero = self._a == 0
 
     def AND(self, op_code):
         # AND Memory with Accumulator
@@ -102,7 +209,7 @@ class CPU:
         #                                  + + - - - -       
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     AND #oper     29    2     2
+        # immediate     AND #oper     29    2     2
         # zeropage      AND oper      25    2     3
         # zeropage,X    AND oper,X    35    2     4
         # absolute      AND oper      2D    3     4
@@ -110,7 +217,39 @@ class CPU:
         # absolute,Y    AND oper,Y    39    3     4*
         # (indirect,X)  AND (oper,X)  21    2     6
         # (indirect),Y  AND (oper),Y  31    2     5*
-        raise NotImplementedError()
+        value = None
+
+        if (op_code == 0x29): # immediate
+            value = self._get_next_byte()
+            self.instruction_cycles = 2
+        elif (op_code == 0x25): # zeropage
+            value = self._get_value_at_zeropage()
+            self.instruction_cycles = 3
+        elif (op_code == 0x35): # zeropage,X
+            value = self._get_value_at_zeropage_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0x2D): # absolute
+            value = self._get_value_at_absolute()
+            self.instruction_cycles = 4
+        elif (op_code == 0x3D): # absolute,X
+            value = self._get_value_at_absolute_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0x39): # absolute,Y
+            value = self._get_value_at_absolute_y()
+            self.instruction_cycles = 4
+        elif (op_code == 0x21): # (indirect,X)            
+            value = self._get_value_at_indirect_x()
+            self.instruction_cycles = 6
+        elif (op_code == 0x31): # (indirect),Y
+            value = self._get_value_at_indirect_y()
+            self.instruction_cycles = 5
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        self._a = (self._a&value)&0xFF
+        
+        self._negative = (self._a&0x80) > 0
+        self._zero = self._a == 0
 
     def ASL(self, op_code):
         # Shift Left One Bit (Memory or Accumulator)
@@ -123,7 +262,37 @@ class CPU:
         # zeropage,X    ASL oper,X    16    2     6
         # absolute      ASL oper      0E    3     6
         # absolute,X    ASL oper,X    1E    3     7
-        raise NotImplementedError()
+        address = None
+        if (op_code == 0x0A): # accumulator
+            self._carry = (self._a&0x80) > 0
+            self._a <<= 1
+            self.instruction_cycles = 2
+            return
+        elif (op_code == 0x06): # zeropage
+            address = self._get_address_at_zeropage()
+            self.instruction_cycles = 5
+        elif (op_code == 0x16): # zeropage,X
+            address = self._get_address_at_zeropage_x()
+            self.instruction_cycles = 6
+        elif (op_code == 0x0E): # absolute
+            address = self._get_address_at_absolute()
+            self.instruction_cycles = 6
+        elif (op_code == 0x1E): # absolute,X
+            address = self._get_address_at_absolute_x()
+            self.instruction_cycles = 7
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        value = self._system.mmu.read_byte(address)
+
+        self._carry = (value&0x80) > 0
+
+        value <<= 1
+
+        self._negative = (value&0x80) > 0
+        self._zero = value == 0
+
+        self._system.mmu.write_byte(address, value)
 
     def BCC(self, op_code):
         # Branch on Carry Clear
@@ -225,7 +394,8 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       CLC           18    1     2
-        raise NotImplementedError()
+        self._carry = False
+        self.instruction_cycles = 2
 
     def CLD(self, op_code):
         # Clear Decimal Mode
@@ -233,8 +403,9 @@ class CPU:
         #                                  - - - - 0 -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # implied       CLD           D8    1     2
-        raise NotImplementedError()
+        # implied       CLD           D8    1     2        
+        self._decimal_mode = False
+        self.instruction_cycles = 2
 
     def CLI(self, op_code):
         # Clear Interrupt Disable Bit
@@ -242,8 +413,9 @@ class CPU:
         #                                  - - - 0 - -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # implied       CLI           58    1     2
-        raise NotImplementedError()
+        # implied       CLI           58    1     2        
+        self._interrupt_disable = False
+        self.instruction_cycles = 2
     
     def CLV(self, op_code):
         # Clear Overflow Flag
@@ -251,8 +423,9 @@ class CPU:
         #                                  - - - - - 0
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # implied       CLV           B8    1     2
-        raise NotImplementedError()
+        # implied       CLV           B8    1     2        
+        self._overflow = False
+        self.instruction_cycles = 2
 
     def CMP(self, op_code):
         # Compare Memory with Accumulator
@@ -260,7 +433,7 @@ class CPU:
         #                                + + + - - -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     CMP #oper     C9    2     2
+        # immediate     CMP #oper     C9    2     2
         # zeropage      CMP oper      C5    2     3
         # zeropage,X    CMP oper,X    D5    2     4
         # absolute      CMP oper      CD    3     4
@@ -276,7 +449,7 @@ class CPU:
         #                                  + + + - - -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     CPX #oper     E0    2     2
+        # immediate     CPX #oper     E0    2     2
         # zeropage      CPX oper      E4    2     3
         # absolute      CPX oper      EC    3     4
         raise NotImplementedError()
@@ -287,7 +460,7 @@ class CPU:
         #                                  + + + - - -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     CPY #oper     C0    2     2
+        # immediate     CPY #oper     C0    2     2
         # zeropage      CPY oper      C4    2     3
         # absolute      CPY oper      CC    3     4
         raise NotImplementedError()
@@ -302,7 +475,30 @@ class CPU:
         # zeropage,X    DEC oper,X    D6    2     6
         # absolute      DEC oper      CE    3     3
         # absolute,X    DEC oper,X    DE    3     7
-        raise NotImplementedError()
+        address = None
+
+        if (op_code == 0xC6): # zeropage
+            address = self._get_address_at_zeropage()
+            self.instruction_cycles = 5
+        elif (op_code == 0xD6): # zeropage,X            
+            address = self._get_address_at_zeropage_x()
+            self.instruction_cycles = 6
+        elif (op_code == 0xCE): # absolute
+            address = self._get_address_at_absolute()
+            self.instruction_cycles = 3
+        elif (op_code == 0xDE): # absolute,X
+            address = self._get_address_at_absolute_x()
+            self.instruction_cycles = 7
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        value = self._system.mmu.read_byte(address)
+        value = (value-1)&0xFF
+        
+        self._negative = (value>>7) == 1
+        self._zero = value == 0
+
+        self._system.mmu.write_byte(address, value)        
 
     def DEX(self, op_code):
         # Decrement Index X by One
@@ -311,7 +507,12 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       DEC           CA    1     2
-        raise NotImplementedError()
+        self._x = (self._x-1)&0xFF
+
+        self._negative = (self._x>>7) == 1
+        self._zero = self._x == 0
+
+        self.instruction_cycles = 2
 
     def DEY(self, op_code):
         # Decrement Index Y by One
@@ -320,7 +521,12 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       DEC           88    1     2
-        raise NotImplementedError()
+        self._y = (self._y-1)&0xFF
+
+        self._negative = (self._y>>7) == 1
+        self._zero = self._y == 0
+
+        self.instruction_cycles = 2
 
     def EOR(self, op_code):
         # Exclusive-OR Memory with Accumulator
@@ -328,7 +534,7 @@ class CPU:
         #                                  + + - - - -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     EOR #oper     49    2     2
+        # immediate     EOR #oper     49    2     2
         # zeropage      EOR oper      45    2     3
         # zeropage,X    EOR oper,X    55    2     4
         # absolute      EOR oper      4D    3     4
@@ -357,7 +563,12 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       INX           E8    1     2
-        raise NotImplementedError()
+        self._x += 1
+
+        self._negative = (self._x&0x80) > 0
+        self._zero = self._x == 0
+
+        self.instruction_cycles = 2
 
     def INY(self, op_code):
         # Increment Index Y by One
@@ -366,7 +577,12 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       INY           C8    1     2
-        raise NotImplementedError()
+        self._y += 1
+
+        self._negative = (self._y&0x80) > 0
+        self._zero = self._y == 0
+        
+        self.instruction_cycles = 2
 
     def JMP(self, op_code):
         # Jump to New Location
@@ -394,7 +610,7 @@ class CPU:
         #                                  + + - - - -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     LDA #oper     A9    2     2
+        # immediate     LDA #oper     A9    2     2
         # zeropage      LDA oper      A5    2     3
         # zeropage,X    LDA oper,X    B5    2     4
         # absolute      LDA oper      AD    3     4
@@ -402,7 +618,38 @@ class CPU:
         # absolute,Y    LDA oper,Y    B9    3     4*
         # (indirect,X)  LDA (oper,X)  A1    2     6
         # (indirect),Y  LDA (oper),Y  B1    2     5*
-        raise NotImplementedError()
+        value = None
+
+        if (op_code == 0xA9): # immedidate
+            value = self._get_next_byte()
+            self.instruction_cycles = 2
+        elif (op_code == 0xA5): # zeropage
+            value = self._get_value_at_zeropage()
+            self.instruction_cycles = 3
+        elif (op_code == 0xB5): # zeropage,X
+            value = self._get_value_at_zeropage_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0xAD): # absolute
+            value = self._get_value_at_absolute()
+            self.instruction_cycles = 4
+        elif (op_code == 0xBD): # absolute,X
+            value = self._get_value_at_absolute_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0xB9): # absolute,Y
+            value = self._get_value_at_absolute_y()
+            self.instruction_cycles = 4
+        elif (op_code == 0xA1): # (indirect,X)
+            value = self._get_value_at_indirect_x
+            self.instruction_cycles = 6
+        elif (op_code == 0xB1): # (indirect),Y
+            value = self._get_value_at_indirect_y
+            self.instruction_cycles = 5
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        self._negative = (value&0x80) > 0
+        self._zero = value == 0
+        self._a = value        
 
     def LDX(self, op_code):
         # Load Index X with Memory
@@ -410,7 +657,7 @@ class CPU:
         #                                  + + - - - -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     LDX #oper     A2    2     2
+        # immediate     LDX #oper     A2    2     2
         # zeropage      LDX oper      A6    2     3
         # zeropage,Y    LDX oper,Y    B6    2     4
         # absolute      LDX oper      AE    3     4
@@ -423,7 +670,7 @@ class CPU:
         #                                  + + - - - -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     LDY #oper     A0    2     2
+        # immediate     LDY #oper     A0    2     2
         # zeropage      LDY oper      A4    2     3
         # zeropage,X    LDY oper,X    B4    2     4
         # absolute      LDY oper      AC    3     4
@@ -450,7 +697,7 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       NOP           EA    1     2
-        raise NotImplementedError()
+        self.instruction_cycles = 2
 
     def ORA(self, op_code):
         # OR Memory with Accumulator
@@ -458,7 +705,7 @@ class CPU:
         #                                  + + - - - -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     ORA #oper     09    2     2
+        # immediate     ORA #oper     09    2     2
         # zeropage      ORA oper      05    2     3
         # zeropage,X    ORA oper,X    15    2     4
         # absolute      ORA oper      0D    3     4
@@ -554,7 +801,7 @@ class CPU:
         #                                  + + + - - +
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
-        # immidiate     SBC #oper     E9    2     2
+        # immediate     SBC #oper     E9    2     2
         # zeropage      SBC oper      E5    2     3
         # zeropage,X    SBC oper,X    F5    2     4
         # absolute      SBC oper      ED    3     4
@@ -571,7 +818,8 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       SEC           38    1     2
-        raise NotImplementedError()
+        self._carry = True
+        self.instruction_cycles = 2
 
     def SED(self, op_code):
         # Set Decimal Flag
@@ -580,7 +828,8 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       SED           F8    1     2
-        raise NotImplementedError()
+        self._decimal_mode = True
+        self.instruction_cycles = 2
 
     def SEI(self, op_code):
         # Set Interrupt Disable Status
@@ -589,7 +838,8 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       SEI           78    1     2
-        raise NotImplementedError()
+        self._interrupt_disable = True
+        self.instruction_cycles = 2
 
     def STA(self, op_code):
         # Store Accumulator in Memory
@@ -604,7 +854,33 @@ class CPU:
         # absolute,Y    STA oper,Y    99    3     5
         # (indirect,X)  STA (oper,X)  81    2     6
         # (indirect),Y  STA (oper),Y  91    2     6
-        raise NotImplementedError()
+        address = None
+
+        if (op_code == 0x85): # zeropage
+            address = self._get_address_at_zeropage()
+            self.instruction_cycles = 3
+        elif (op_code == 0x95): # zeropage,X            
+            address = self._get_address_at_zeropage_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0x8D): # absolute
+            address = self._get_address_at_absolute()
+            self.instruction_cycles = 4
+        elif (op_code == 0x9D): # absolute,X
+            address = self._get_address_at_absolute_x()
+            self.instruction_cycles = 5
+        elif (op_code == 0x99): # absolute,Y
+            address = self._get_address_at_absolute_y()
+            self.instruction_cycles = 5
+        elif (op_code == 0x81): # (indirect,X)
+            address = self._get_address_at_indirect_x()
+            self.instruction_cycles = 6
+        elif (op_code == 0x91): # (indirect),Y
+            address = self._get_address_at_indirect_y()
+            self.instruction_cycles = 6
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        self._system.mmu.write_byte(address, self._a)
 
     def STX(self, op_code):
         # Store Index X in Memory
@@ -635,7 +911,8 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       TAX           AA    1     2
-        raise NotImplementedError()
+        self._x = self._a
+        self.instruction_cycles = 2
 
     def TAY(self, op_code):
         # Transfer Accumulator to Index Y
@@ -644,7 +921,8 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       TAY           A8    1     2
-        raise NotImplementedError()
+        self._y = self._a
+        self.instruction_cycles = 2
 
     def TSX(self, op_code):
         # Transfer Stack Pointer to Index X
@@ -653,7 +931,8 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       TSX           BA    1     2
-        raise NotImplementedError()
+        self._x = self._sp
+        self.instruction_cycles = 2
 
     def TXA(self, op_code):
         # Transfer Index X to Accumulator
@@ -662,7 +941,8 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       TXA           8A    1     2
-        raise NotImplementedError()
+        self._a = self._x
+        self.instruction_cycles = 2
 
     def TXS(self, op_code):
         # Transfer Index X to Stack Register
@@ -671,7 +951,8 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       TXS           9A    1     2
-        raise NotImplementedError()
+        self._sp = self._x
+        self.instruction_cycles = 2
 
     def TYA(self, op_code):
         # Transfer Index Y to Accumulator
@@ -680,4 +961,5 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       TYA           98    1     2
-        raise NotImplementedError()
+        self._a = self._y
+        self.instruction_cycles = 2

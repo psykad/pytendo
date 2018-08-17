@@ -40,8 +40,11 @@ class CPU:
 
     def step(self):
         # Fetch next instruction.
+        pc = self._pc
+        if (pc == 0xC7AF):
+            raise Exception("instruction hit")
         op_code = self._get_next_byte()
-        print(f"OP CODE: {hex(op_code)}")
+        #print(f"PC: {hex(pc)} / INS: {hex(op_code)}")
 
         # Decode op code.
         instruction = self.decode_instruction(op_code)
@@ -110,6 +113,9 @@ class CPU:
     def _get_address_at_zeropage_x(self):
         return (self._get_next_byte() + self._x)&0xFF
 
+    def _get_address_at_zeropage_y(self):
+        return (self._get_next_byte() + self._y)&0xFF
+        
     def _get_address_at_absolute(self):
         return self._get_next_word()
 
@@ -148,8 +154,9 @@ class CPU:
 
     ###############################################################################
     # Instructions
+    # TODO: Implement * modifiers to instruction timing. i.e. add 1 if page boundary is crossed.
     ###############################################################################
-    def ADC(self, op_code):
+    def ADC(self, op_code):        
         # Add Memory to Accumulator with Carry    
         # A + M + C -> A, C                N Z C I D V
         #                                  + + + - - +
@@ -218,7 +225,6 @@ class CPU:
         # (indirect,X)  AND (oper,X)  21    2     6
         # (indirect),Y  AND (oper),Y  31    2     5*
         value = None
-
         if (op_code == 0x29): # immediate
             value = self._get_next_byte()
             self.instruction_cycles = 2
@@ -301,7 +307,14 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # relative      BCC oper      90    2     2**
-        raise NotImplementedError()
+        offset = self._get_next_byte()
+
+        if (not self._carry):
+            if (offset > 127):
+                offset = -((~offset+1)&255) # Signed byte
+                self._pc += offset
+
+        self.instruction_cycles = 2
 
     def BCS(self, op_code):
         # Branch on Carry Set
@@ -310,7 +323,14 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # relative      BCS oper      B0    2     2**
-        raise NotImplementedError()
+        offset = self._get_next_byte()
+
+        if (self._carry):
+            if (offset > 127):
+                offset = -((~offset+1)&255) # Signed byte
+                self._pc += offset
+
+        self.instruction_cycles = 2
 
     def BEQ(self, op_code):
         # Branch on Result Zero
@@ -319,7 +339,14 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # relative      BEQ oper      F0    2     2**
-        raise NotImplementedError()
+        offset = self._get_next_byte()
+
+        if (self._zero):
+            if (offset > 127):
+                offset = -((~offset+1)&255) # Signed byte
+                self._pc += offset
+
+        self.instruction_cycles = 2
 
     def BIT(self, op_code):
         # Test Bits in Memory with Accumulator
@@ -340,7 +367,14 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # relative      BMI oper      30    2     2**
-        raise NotImplementedError()
+        offset = self._get_next_byte()
+
+        if (self._negative):
+            if (offset > 127):
+                offset = -((~offset+1)&255) # Signed byte
+                self._pc += offset
+
+        self.instruction_cycles = 2
 
     def BNE(self, op_code):
         # Branch on Result not Zero
@@ -349,7 +383,14 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # relative      BNE oper      D0    2     2**
-        raise NotImplementedError()
+        offset = self._get_next_byte()
+
+        if (not self._negative):
+            if (offset > 127):
+                offset = -((~offset+1)&255) # Signed byte
+                self._pc += offset
+
+        self.instruction_cycles = 2
 
     def BPL(self, op_code):
         # Branch on Result Plus
@@ -358,7 +399,14 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # relative      BPL oper      10    2     2**
-        raise NotImplementedError()
+        offset = self._get_next_byte()
+
+        if (not self._negative):
+            if (offset > 127):
+                offset = -((~offset+1)&255) # Signed byte
+                self._pc += offset
+
+        self.instruction_cycles = 2
 
     def BRK(self, op_code):
         # Force Break
@@ -376,7 +424,14 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # relative      BVC oper      50    2     2**
-        raise NotImplementedError()
+        offset = self._get_next_byte()
+
+        if (not self._overflow):
+            if (offset > 127):
+                offset = -((~offset+1)&255) # Signed byte
+                self._pc += offset
+
+        self.instruction_cycles = 2
 
     def BVS(self, op_code):
         # Branch on Overflow Set
@@ -385,7 +440,14 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # relative      BVC oper      70    2     2**
-        raise NotImplementedError()
+        offset = self._get_next_byte()
+
+        if (self._overflow):
+            if (offset > 127):
+                offset = -((~offset+1)&255) # Signed byte
+                self._pc += offset
+
+        self.instruction_cycles = 2
 
     def CLC(self, op_code):
         # Clear Carry Flag
@@ -430,7 +492,7 @@ class CPU:
     def CMP(self, op_code):
         # Compare Memory with Accumulator
         # A - M                            N Z C I D V
-        #                                + + + - - -
+        #                                  + + + - - -
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # immediate     CMP #oper     C9    2     2
@@ -441,7 +503,47 @@ class CPU:
         # absolute,Y    CMP oper,Y    D9    3     4*
         # (indirect,X)  CMP (oper,X)  C1    2     6
         # (indirect),Y  CMP (oper),Y  D1    2     5*
-        raise NotImplementedError()
+        value = None
+
+        if (op_code == 0xC9): # immediate
+            value = self._get_next_byte()
+            self.instruction_cycles = 2
+        elif (op_code == 0xC5): # zeropage
+            value = self._get_value_at_zeropage()
+            self.instruction_cycles = 3
+        elif (op_code == 0xD5): # zeropage,X
+            value = self._get_value_at_zeropage_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0xCD): # absolute
+            value = self._get_value_at_absolute()
+            self.instruction_cycles = 4
+        elif (op_code == 0xDD): # absolute,X
+            value = self._get_value_at_absolute_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0xD9): # absolute,Y
+            value = self._get_value_at_absolute_y()
+            self.instruction_cycles = 4
+        elif (op_code == 0xC1): # (indirect,X)
+            value = self._get_value_at_indirect_x()
+            self.instruction_cycles = 6
+        elif (op_code == 0xD1): # (indirect),Y
+            value = self._get_value_at_indirect_y()
+            self.instruction_cycles = 5
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        if (self._a < value):
+            self._negative = (value&0x80) > 0
+            self._zero = False
+            self._carry = False
+        elif (self._a > value):
+            self._negative = (value&0x80) > 0
+            self._zero = False
+            self._carry = True
+        else:
+            self._negative = False
+            self._zero = True
+            self._carry = True
 
     def CPX(self, op_code):
         # Compare Memory and Index X
@@ -452,7 +554,32 @@ class CPU:
         # immediate     CPX #oper     E0    2     2
         # zeropage      CPX oper      E4    2     3
         # absolute      CPX oper      EC    3     4
-        raise NotImplementedError()
+        value = None
+
+        if (op_code == 0xE0): # immediate
+            value = self._get_next_byte()
+            self.instruction_cycles = 2
+        elif (op_code == 0xE4): # zeropage
+            value = self._get_value_at_zeropage()
+            self.instruction_cycles = 3
+        elif (op_code == 0xEC): # absolute
+            value = self._get_value_at_absolute()
+            self.instruction_cycles = 4
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        if (self._x < value):
+            self._negative = (value&0x80) > 0
+            self._zero = False
+            self._carry = False
+        elif (self._x > value):
+            self._negative = (value&0x80) > 0
+            self._zero = False
+            self._carry = True
+        else:
+            self._negative = False
+            self._zero = True
+            self._carry = True     
 
     def CPY(self, op_code):
         # Compare Memory and Index Y
@@ -662,7 +789,29 @@ class CPU:
         # zeropage,Y    LDX oper,Y    B6    2     4
         # absolute      LDX oper      AE    3     4
         # absolute,Y    LDX oper,Y    BE    3     4*
-        raise NotImplementedError()
+        value = None
+
+        if (op_code == 0xA2): # immediate
+            value = self._get_next_byte()
+            self.instruction_cycles = 2
+        elif (op_code == 0xA6): # zeropage
+            value = self._get_value_at_zeropage()
+            self.instruction_cycles = 3
+        elif (op_code == 0xB6): # zeropage,Y
+            value = self._get_value_at_zeropage_y()
+            self.instruction_cycles = 4
+        elif (op_code == 0xAE): # absolute
+            value = self._get_value_at_absolute()
+            self.instruction_cycles = 4
+        elif (op_code == 0xBE): # absolute,Y
+            value = self._get_value_at_absolute_y()
+            self.instruction_cycles = 4
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        self._negative = (value&0x80) > 0
+        self._zero = value == 0
+        self._x = value
 
     def LDY(self, op_code):
         # Load Index Y with Memory
@@ -713,7 +862,38 @@ class CPU:
         # absolute,Y    ORA oper,Y    19    3     4*
         # (indirect,X)  ORA (oper,X)  01    2     6
         # (indirect),Y  ORA (oper),Y  11    2     5*
-        raise NotImplementedError()
+        value = None
+        if (op_code == 0x09): # immediate
+            value = self._get_next_byte()
+            self.instruction_cycles = 2
+        elif (op_code == 0x05): # zeropage
+            value = self._get_value_at_zeropage()
+            self.instruction_cycles = 3
+        elif (op_code == 0x15): # zeropage,X
+            value = self._get_value_at_zeropage_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0x0D): # absolute
+            value = self._get_value_at_absolute()
+            self.instruction_cycles = 4
+        elif (op_code == 0x1D): # absolute,X
+            value = self._get_value_at_absolute_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0x19): # absolute,Y
+            value = self._get_value_at_absolute_y()
+            self.instruction_cycles = 4
+        elif (op_code == 0x01): # (indirect,X)            
+            value = self._get_value_at_indirect_x()
+            self.instruction_cycles = 6
+        elif (op_code == 0x11): # (indirect),Y
+            value = self._get_value_at_indirect_y()
+            self.instruction_cycles = 5
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        self._a = (self._a|value)&0xFF
+        
+        self._negative = (self._a&0x80) > 0
+        self._zero = self._a == 0
 
     def PHA(self, op_code):
         # Push Accumulator on Stack
@@ -722,7 +902,9 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       PHA           48    1     3
-        raise NotImplementedError()
+        self._sp -= 1
+        self._system.mmu.write_byte(self._sp, self._a)
+        self.instruction_cycles = 3
 
     def PHP(self, op_code):
         # Push Processor Status on Stack
@@ -740,7 +922,9 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # implied       PLA           68    1     4
-        raise NotImplementedError()
+        self._a = self._system.mmu.read_byte(self._sp)
+        self._sp += 1
+        self.instruction_cycles = 4
 
     def PLP(self, op_code):
         # Pull Processor Status from Stack
@@ -891,7 +1075,20 @@ class CPU:
         # zeropage      STX oper      86    2     3
         # zeropage,Y    STX oper,Y    96    2     4
         # absolute      STX oper      8E    3     4
-        raise NotImplementedError()
+        address = None
+        if (op_code == 0x86): # zeropage
+            address = self._get_address_at_zeropage()
+            self.instruction_cycles = 3
+        elif (op_code == 0x96): # zeropage,Y
+            address = self._get_address_at_zeropage_y()            
+            self.instruction_cycles = 4
+        elif (op_code == 0x8E): # absolute
+            address = self._get_address_at_absolute()
+            self.instruction_cycles = 4
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        self._system.mmu.write_byte(address, self._x)
 
     def STY(self, op_code):
         # Sore Index Y in Memory
@@ -902,7 +1099,20 @@ class CPU:
         # zeropage      STY oper      84    2     3
         # zeropage,X    STY oper,X    94    2     4
         # absolute      STY oper      8C    3     4
-        raise NotImplementedError()
+        address = None
+        if (op_code == 0x84): # zeropage
+            address = self._get_address_at_zeropage()
+            self.instruction_cycles = 3
+        elif (op_code == 0x94): # zeropage,X
+            address = self._get_address_at_zeropage_x()
+            self.instruction_cycles = 4
+        elif (op_code == 0x8C): # absolute
+            address = self._get_address_at_absolute()
+            self.instruction_cycles = 4
+        else:
+            raise RuntimeError(f"Unknown op code: {op_code}")
+
+        self._system.mmu.write_byte(address, self._y)
 
     def TAX(self, op_code):
         # Transfer Accumulator to Index X
@@ -912,6 +1122,8 @@ class CPU:
         # --------------------------------------------
         # implied       TAX           AA    1     2
         self._x = self._a
+        self._negative = (self._x>>7) > 0
+        self._zero = self._x == 0
         self.instruction_cycles = 2
 
     def TAY(self, op_code):
@@ -922,6 +1134,8 @@ class CPU:
         # --------------------------------------------
         # implied       TAY           A8    1     2
         self._y = self._a
+        self._negative = (self._y>>7) > 0
+        self._zero = self._y == 0
         self.instruction_cycles = 2
 
     def TSX(self, op_code):
@@ -932,6 +1146,8 @@ class CPU:
         # --------------------------------------------
         # implied       TSX           BA    1     2
         self._x = self._sp
+        self._negative = (self._x>>7) > 0
+        self._zero = self._x == 0
         self.instruction_cycles = 2
 
     def TXA(self, op_code):
@@ -942,6 +1158,8 @@ class CPU:
         # --------------------------------------------
         # implied       TXA           8A    1     2
         self._a = self._x
+        self._negative = (self._a>>7) > 0
+        self._zero = self._a == 0
         self.instruction_cycles = 2
 
     def TXS(self, op_code):
@@ -952,6 +1170,8 @@ class CPU:
         # --------------------------------------------
         # implied       TXS           9A    1     2
         self._sp = self._x
+        self._negative = (self._sp>>7) > 0
+        self._zero = self._sp == 0
         self.instruction_cycles = 2
 
     def TYA(self, op_code):
@@ -962,4 +1182,6 @@ class CPU:
         # --------------------------------------------
         # implied       TYA           98    1     2
         self._a = self._y
+        self._negative = (self._a>>7) > 0
+        self._zero = self._a == 0
         self.instruction_cycles = 2

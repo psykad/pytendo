@@ -6,7 +6,7 @@ class Cartridge:
         self._rom = open(filename, "rb").read()
         
         # Check first 3 bytes for the letters 'NES'
-        if (self._rom[0] != 78 or self._rom[1] != 69 or self._rom[2] != 83):
+        if (self._rom[0:3].decode('utf-8') != "NES"):
             raise RuntimeError("Not a valid NES ROM!")            
 
         # Number of 16k program ROM pages.
@@ -97,9 +97,9 @@ class NROM(Mapper):
 
         # Slice ROM into banks.
         rom_offset = 528 if self._cartridge._trainer else 16
-        self._prog_rom_banks = [0xFF] * self._cartridge._total_character_rom_pages
+        self._prog_rom_banks = [0xFF] * self._cartridge._total_program_rom_pages
 
-        for bank in (0, self._cartridge._total_character_rom_pages-1):
+        for bank in (0, self._cartridge._total_program_rom_pages-1):
             self._prog_rom_banks[bank] = self._rom[rom_offset + (16384 * bank):]
 
         self._prog_ram_banks = []

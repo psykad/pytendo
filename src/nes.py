@@ -1,5 +1,6 @@
 from cpu import CPU
 from mmu import MMU
+from ppu import PPU
 from cartridge import Cartridge
 import time
 
@@ -7,10 +8,9 @@ class NES:
     def __init__(self):
         self.cpu = CPU(self)
         self.mmu = MMU(self)
+        self.ppu = PPU(self)
         self.cartridge = None
         self.ram = [0xFF] * 2048
-
-        # TODO: Initialize 2KB internal RAM
 
     def start(self):        
         if (self.cartridge is None):
@@ -21,8 +21,7 @@ class NES:
         # TODO: Create proper execution loop.
         while True:
             self.frame()
-            time.sleep(0.016)
-
+            #time.sleep(0.016)
 
     def frame(self):
         self.cpu.step()

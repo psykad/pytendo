@@ -7,8 +7,8 @@ class CPU:
 
     def reset(self):
         # Program Counter 16-bit, default to value located at the reset vector address.
-        #self._pc = self._system.mmu.read_word(self.VECTOR_RESET)
-        self._pc = 0xC000 # NES TEST Start point
+        self._pc = self._system.mmu.read_word(self.VECTOR_RESET)
+        #self._pc = 0xC000 # NES TEST Start point
         # Stack Pointer 8-bit, ranges from 0x0100 to 0x01FF
         self._sp = 0xFD
         # Accumulator 8-bit
@@ -44,10 +44,9 @@ class CPU:
         # Fetch next instruction.
         pc = self._pc
         self._current_instruction = pc
-        print(f"{format(pc,'x').upper()}")
+        #print(f"PC: {format(pc,'x').upper()} / SP: {format(self._sp,'x').upper()} / A: {format(self._a,'x').upper()} / X: {format(self._x,'x').upper()} / Y: {format(self._y,'x').upper()}")
         self._debug_log.write(f"{format(pc,'x').upper()}\n")
         op_code = self._get_next_byte()
-        #print(f"PC: {hex(pc)} / INS: {hex(op_code)}")
 
         # Decode op code.
         instruction = self.decode_instruction(op_code)
@@ -127,13 +126,13 @@ class CPU:
 
     # Pushes a byte onto the stack.
     def push(self, value):
-        self._system.mmu.write_byte(self._sp, value)
+        self._system.mmu.write_byte(0x0100 + self._sp, value)
         self._sp = (self._sp-1)&0xFF
 
     # Pulls the next byte off the stack.
     def pull(self):
         self._sp = (self._sp+1)&0xFF
-        value = self._system.mmu.read_byte(self._sp)
+        value = self._system.mmu.read_byte(0x0100 + self._sp)
         return value
 
     ###############################################################################
@@ -161,10 +160,13 @@ class CPU:
         return self._system.mmu.read_word(self._get_next_byte())
 
     def _get_address_at_indirect_x(self):
-        return self._system.mmu.read_word((self._get_next_byte()+self._x)&0xFF)
+        m = self._get_next_byte()        
+        hi = self._system.mmu.read_byte((m + 1 + self._x)&0xFF)
+        lo = self._system.mmu.read_byte((m + self._x)&0xFF)
+        return (hi<<8)+lo
 
     def _get_address_at_indirect_y(self):
-        return self._system.mmu.read_word(self._get_next_byte())+self._y
+        return (self._system.mmu.read_word(self._get_next_byte()) + self._y)&0xFFFF
 
     def _get_value_at_zeropage(self):
         return self._system.mmu.read_byte(self._get_address_at_zeropage())
@@ -232,7 +234,6 @@ class CPU:
             self.instruction_cycles = 5
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         result = self._a + value + (1 if self._carry == True else 0)
         self._carry = result > 0xFF
         # More info on source: https://stackoverflow.com/a/29224684
@@ -282,7 +283,6 @@ class CPU:
             self.instruction_cycles = 5
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         self._a = (self._a&value)&0xFF        
         self._negative = (self._a&0x80) > 0
         self._zero = self._a == 0
@@ -320,7 +320,6 @@ class CPU:
             self.instruction_cycles = 7
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         value = self._system.mmu.read_byte(address)
         self._carry = value&0x80 > 0
         value = (value<<1)&0xFF
@@ -336,12 +335,10 @@ class CPU:
         # --------------------------------------------
         # relative      BCC oper      90    2     2**
         offset = self._get_next_byte()
-
         if (not self._carry):
             if (offset > 127):
                 offset = -((~offset+1)&255) # Signed byte
             self._pc += offset
-
         self.instruction_cycles = 2
 
     def BCS(self, op_code):
@@ -352,12 +349,10 @@ class CPU:
         # --------------------------------------------
         # relative      BCS oper      B0    2     2**
         offset = self._get_next_byte()
-
         if (self._carry):
             if (offset > 127):
                 offset = -((~offset+1)&255) # Signed byte
             self._pc += offset
-
         self.instruction_cycles = 2
 
     def BEQ(self, op_code):
@@ -368,12 +363,10 @@ class CPU:
         # --------------------------------------------
         # relative      BEQ oper      F0    2     2**
         offset = self._get_next_byte()
-
         if (self._zero):
             if (offset > 127):
                 offset = -((~offset+1)&255) # Signed byte
             self._pc += offset
-
         self.instruction_cycles = 2
 
     def BIT(self, op_code):
@@ -386,15 +379,13 @@ class CPU:
         # --------------------------------------------
         # zeropage      BIT oper      24    2     3
         # absolute      BIT oper      2C    3     4
-        value = None
-        
+        value = None        
         if (op_code == 0x24): # zeropage
             value = self._get_value_at_zeropage()
             self.instruction_cycles = 3
         elif (op_code == 0x2C): # absolute
             value = self._get_value_at_absolute()
             self.instruction_cycles = 4
-
         self._negative = value&0x80 > 0
         self._overflow = value&0x40 > 0
         value &= self._a
@@ -408,12 +399,10 @@ class CPU:
         # --------------------------------------------
         # relative      BMI oper      30    2     2**
         offset = self._get_next_byte()
-
         if (self._negative):
             if (offset > 127):
                 offset = -((~offset+1)&255) # Signed byte
             self._pc += offset
-
         self.instruction_cycles = 2
 
     def BNE(self, op_code):
@@ -424,12 +413,10 @@ class CPU:
         # --------------------------------------------
         # relative      BNE oper      D0    2     2**
         offset = self._get_next_byte()
-
         if (not self._zero):
             if (offset > 127):
                 offset = -((~offset+1)&255) # Signed byte
             self._pc += offset
-
         self.instruction_cycles = 2
 
     def BPL(self, op_code):
@@ -440,12 +427,10 @@ class CPU:
         # --------------------------------------------
         # relative      BPL oper      10    2     2**
         offset = self._get_next_byte()
-
         if (not self._negative):
             if (offset > 127):
                 offset = -((~offset+1)&255) # Signed byte
             self._pc += offset
-
         self.instruction_cycles = 2
 
     def BRK(self, op_code):
@@ -465,12 +450,10 @@ class CPU:
         # --------------------------------------------
         # relative      BVC oper      50    2     2**
         offset = self._get_next_byte()
-
         if (not self._overflow):
             if (offset > 127):
                 offset = -((~offset+1)&255) # Signed byte
             self._pc += offset
-
         self.instruction_cycles = 2
 
     def BVS(self, op_code):
@@ -481,12 +464,10 @@ class CPU:
         # --------------------------------------------
         # relative      BVC oper      70    2     2**
         offset = self._get_next_byte()
-
         if (self._overflow):
             if (offset > 127):
                 offset = -((~offset+1)&255) # Signed byte
             self._pc += offset
-
         self.instruction_cycles = 2
 
     def CLC(self, op_code):
@@ -544,7 +525,6 @@ class CPU:
         # (indirect,X)  CMP (oper,X)  C1    2     6
         # (indirect),Y  CMP (oper),Y  D1    2     5*
         value = None
-
         if (op_code == 0xC9): # immediate
             value = self._get_next_byte()
             self.instruction_cycles = 2
@@ -570,10 +550,8 @@ class CPU:
             value = self._get_value_at_indirect_y()
             self.instruction_cycles = 5
         else:
-            raise RuntimeError(f"Unknown op code: {op_code}")
-        
+            raise RuntimeError(f"Unknown op code: {op_code}")        
         result = (self._a - value)&0xFF
-
         self._carry = self._a >= value
         self._zero = self._a == value
         self._negative = result&0x80 > 0
@@ -588,7 +566,6 @@ class CPU:
         # zeropage      CPX oper      E4    2     3
         # absolute      CPX oper      EC    3     4
         value = None
-
         if (op_code == 0xE0): # immediate
             value = self._get_next_byte()
             self.instruction_cycles = 2
@@ -600,9 +577,7 @@ class CPU:
             self.instruction_cycles = 4
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         result = (self._x - value)&0xFF
-
         self._carry = self._x >= value
         self._zero = self._x == value
         self._negative = result&0x80 > 0
@@ -617,7 +592,6 @@ class CPU:
         # zeropage      CPY oper      C4    2     3
         # absolute      CPY oper      CC    3     4
         value = None
-
         if (op_code == 0xC0): # immediate
             value = self._get_next_byte()
             self.instruction_cycles = 2
@@ -629,9 +603,7 @@ class CPU:
             self.instruction_cycles = 4
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         result = (self._y - value)&0xFF
-
         self._carry = self._y >= value
         self._zero = self._y == value
         self._negative = result&0x80 > 0
@@ -647,7 +619,6 @@ class CPU:
         # absolute      DEC oper      CE    3     3
         # absolute,X    DEC oper,X    DE    3     7
         address = None
-
         if (op_code == 0xC6): # zeropage
             address = self._get_address_at_zeropage()
             self.instruction_cycles = 5
@@ -662,7 +633,6 @@ class CPU:
             self.instruction_cycles = 7
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         value = (self._system.mmu.read_byte(address)-1)&0xFF        
         self._negative = value&0x80 > 1
         self._zero = value == 0
@@ -707,7 +677,6 @@ class CPU:
         # (indirect,X)  EOR (oper,X)  41    2     6
         # (indirect),Y  EOR (oper),Y  51    2     5*
         value = None
-
         if (op_code == 0x49): # immediate
             value = self._get_next_byte()
             self.instruction_cycles = 2
@@ -734,7 +703,6 @@ class CPU:
             self.instruction_cycles = 5
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         self._a ^= value
         self._negative = (self._a>>7) == 1
         self._zero = self._a == 0
@@ -750,7 +718,6 @@ class CPU:
         # absolute      INC oper      EE    3     6
         # absolute,X    INC oper,X    FE    3     7
         address = None
-
         if (op_code == 0xE6): # zeropage
             address = self._get_address_at_zeropage()
             self.instruction_cycles = 5
@@ -765,12 +732,9 @@ class CPU:
             self.instruction_cycles = 7
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
-        value = (self._system.mmu.read_byte(address)+1)&0xFF
-        
+        value = (self._system.mmu.read_byte(address)+1)&0xFF        
         self._negative = (value>>7) == 1
         self._zero = value == 0
-
         self._system.mmu.write_byte(address, value)
 
     def INX(self, op_code):
@@ -813,8 +777,7 @@ class CPU:
             self.instruction_cycles = 3
         elif (op_code == 0x6C): # indirect
             address = self._get_address_at_indirect()
-            self.instruction_cycles = 5
-        
+            self.instruction_cycles = 5        
         self._pc = address
 
     def JSR(self, op_code):
@@ -825,8 +788,7 @@ class CPU:
         # addressing    assembler    opc  bytes  cyles
         # --------------------------------------------
         # absolute      JSR oper      20    3     6
-        next_address = self._pc+2
-        print(f"JSR next address: {hex(next_address)}")
+        next_address = self._pc+1
         self.push(next_address>>8) # HI byte
         self.push(next_address&0xFF) # LO byte
         self._pc = self._get_address_at_absolute()
@@ -847,7 +809,6 @@ class CPU:
         # (indirect,X)  LDA (oper,X)  A1    2     6
         # (indirect),Y  LDA (oper),Y  B1    2     5*
         value = None
-
         if (op_code == 0xA9): # immedidate
             value = self._get_next_byte()
             self.instruction_cycles = 2
@@ -874,7 +835,6 @@ class CPU:
             self.instruction_cycles = 5
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         self._negative = (value&0x80) > 0
         self._zero = value == 0
         self._a = value        
@@ -891,7 +851,6 @@ class CPU:
         # absolute      LDX oper      AE    3     4
         # absolute,Y    LDX oper,Y    BE    3     4*
         value = None
-
         if (op_code == 0xA2): # immediate
             value = self._get_next_byte()
             self.instruction_cycles = 2
@@ -909,7 +868,6 @@ class CPU:
             self.instruction_cycles = 4
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         self._negative = (value&0x80) > 0
         self._zero = value == 0
         self._x = value
@@ -926,7 +884,6 @@ class CPU:
         # absolute      LDY oper      AC    3     4
         # absolute,X    LDY oper,X    BC    3     4*
         value = None
-
         if (op_code == 0xA0): # immediate
             value = self._get_next_byte()
             self.instruction_cycles = 2
@@ -944,7 +901,6 @@ class CPU:
             self.instruction_cycles = 4
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         self._negative = (value&0x80) > 0
         self._zero = value == 0
         self._y = value
@@ -982,16 +938,11 @@ class CPU:
             self.instruction_cycles = 7
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         value = self._system.mmu.read_byte(address)
-
         self._carry = (value&0x80) > 0
-
         value <<= 1
-
         self._negative = (value&0x80) > 0
         self._zero = value == 0
-
         self._system.mmu.write_byte(address, value)
 
     def NOP(self, op_code):
@@ -1044,9 +995,7 @@ class CPU:
             self.instruction_cycles = 5
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
-        self._a = (self._a|value)&0xFF
-        
+        self._a = (self._a|value)&0xFF        
         self._negative = (self._a&0x80) > 0
         self._zero = self._a == 0
 
@@ -1106,7 +1055,6 @@ class CPU:
         # absolute      ROL oper      2E    3     6
         # absolute,X    ROL oper,X    3E    3     7
         address = None
-
         if (op_code == 0x2A): # accumulator
             carryOut = True if (self._a&0x80 > 0) else False
             self._a = ((self._a<<1) + (1 if (self._carry) else 0))&0xFF
@@ -1128,8 +1076,7 @@ class CPU:
             address = self._get_address_at_absolute_x()
             self.instruction_cycles = 7
         else:
-            raise RuntimeError(f"Unknown op code: {op_code}")            
-
+            raise RuntimeError(f"Unknown op code: {op_code}")
         value = self._system.mmu.read_byte(address)
         carryOut = True if (value&0x80 > 0) else False
         value = ((value<<1) + (1 if (self._carry) else 0))&0xFF
@@ -1150,7 +1097,6 @@ class CPU:
         # absolute      ROR oper      6E    3     6
         # absolute,X    ROR oper,X    7E    3     7
         address = None
-
         if (op_code == 0x6A): # accumulator
             carryOut = True if (self._a&0x01 > 0) else False
             self._a = ((self._a>>1) + (0x80 if (self._carry) else 0))&0xFF
@@ -1172,8 +1118,7 @@ class CPU:
             address = self._get_address_at_absolute_x()
             self.instruction_cycles = 7
         else:
-            raise RuntimeError(f"Unknown op code: {op_code}")            
-
+            raise RuntimeError(f"Unknown op code: {op_code}")
         value = self._system.mmu.read_byte(address)
         carryOut = True if (value&0x01 > 0) else False
         value = ((value>>1) + (0x80 if (self._carry) else 0))&0xFF
@@ -1203,9 +1148,8 @@ class CPU:
         # --------------------------------------------
         # implied       RTS           60    1     6        
         pc_lo = self.pull()
-        pc_hi = self.pull()
-        print(f"hi: {hex(pc_hi)} / lo: {hex(pc_lo)}")
-        self._pc = ((pc_hi<<8) + pc_lo)&0xFFFF
+        pc_hi = self.pull()        
+        self._pc = ((pc_hi<<8) + pc_lo + 1)&0xFFFF
         self.instruction_cycles = 6
 
     def SBC(self, op_code):
@@ -1249,19 +1193,13 @@ class CPU:
             self.instruction_cycles = 5
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         # Invert value and run through same logic as ADC.
         value ^= 0xFF
-
         result = self._a + value + (1 if self._carry == True else 0)
-
         self._carry = result > 0xFF
-
         # More info on source: https://stackoverflow.com/a/29224684
         self._overflow = ~(self._a ^ value) & (self._a ^ result) & 0x80
-
         self._a = result&0xFF
-
         self._negative = self._a&0x80 > 1
         self._zero = self._a == 0
 
@@ -1309,7 +1247,6 @@ class CPU:
         # (indirect,X)  STA (oper,X)  81    2     6
         # (indirect),Y  STA (oper),Y  91    2     6
         address = None
-
         if (op_code == 0x85): # zeropage
             address = self._get_address_at_zeropage()
             self.instruction_cycles = 3
@@ -1333,7 +1270,6 @@ class CPU:
             self.instruction_cycles = 6
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         self._system.mmu.write_byte(address, self._a)
 
     def STX(self, op_code):
@@ -1357,7 +1293,6 @@ class CPU:
             self.instruction_cycles = 4
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         self._system.mmu.write_byte(address, self._x)
 
     def STY(self, op_code):
@@ -1381,7 +1316,6 @@ class CPU:
             self.instruction_cycles = 4
         else:
             raise RuntimeError(f"Unknown op code: {op_code}")
-
         self._system.mmu.write_byte(address, self._y)
 
     def TAX(self, op_code):

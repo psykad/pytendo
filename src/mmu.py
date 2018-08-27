@@ -7,6 +7,8 @@ class MMU:
         if (address < 0x0000 or address > 0xFFFF):
             raise RuntimeError(f"Segfault read @ ${hex(address)}")
 
+        #print(f"MMU: Read {hex(address)}")
+
         # 2KB Internal RAM
         if (address >= 0x0000 and address <= 0x07FF):
             return self._system.ram[address]
@@ -51,7 +53,7 @@ class MMU:
         if (address < 0x0000 or address > 0xFFFF):
             raise RuntimeError(f"Segfault write @ ${hex(address)}")
 
-        print(f"MMU: Write {hex(address)} / {hex(byte)}")
+        #print(f"MMU: Write {hex(address)} / {hex(byte)}")
 
         # 2KB Internal RAM
         if (address >= 0x0000 and address <= 0x07FF):

@@ -93,3 +93,7 @@ class MMU:
         # Cartridge space: PRG ROM, PRG RAM, and mapper registers
         if (address >= 0x4020 and address <= 0xFFFF):
             self._system.cartridge.write_byte(address, byte)
+
+    def write_word(self, address, word):
+        self.write_byte(address, word&0xFF)
+        self.write_byte(address+1, word>>8)

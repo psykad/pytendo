@@ -27,9 +27,14 @@ class PPU:
             0x4014: 0x00  # OAMDMA
         }
 
+        self.clock = 0
+        self.scanline = -1
+
     def read_byte(self, address):        
         if (address == self.PPUSTATUS):
-            return self.registers[self.PPUSTATUS]
+            value = self.registers[self.PPUSTATUS]
+            self.registers[self.PPUSTATUS] &= ~0x80 # Clear VBlank
+            return value
         elif (address == self.OAMDATA):
             return self.registers[self.OAMDATA]
         elif (address == self.PPUDATA):
@@ -65,3 +70,30 @@ class PPU:
             return
 
         raise RuntimeError(f"Unknown Write @ Address: ${hex(address)} / Byte: {hex(byte)}")
+
+    def step(self, cycles):
+        # Note: 1 CPU cycle = 3 PPU cycles
+        self.clock = self.clock + (cycles * 3)        
+
+        # A scanline lasts for 341 PPU cycles.
+        # Each PPU cycle is one pixel.
+        # There are 262 scanlines per frame.
+
+        if (self.clock >= 341):
+            self.clock -= 341
+            if (self.scanline == -1 or self.scanline == 261):
+                # Pre-render scanline
+                self.registers[self.PPUSTATUS] &= ~0x80 # Clear VBlank
+            elif (self.scanline >= 0 and self.scanline <= 239):
+                # Visible scanline
+                pass
+            elif (self.scanline == 240):
+                # Post-render scanline
+                pass
+            elif (self.scanline == 241):
+                # Vertical blanking lines
+                self.registers[self.PPUSTATUS] |= 0x80 # Enable VBlank
+            elif (self.scanline == 260):
+                self.scanline = -2
+
+            self.scanline += 1

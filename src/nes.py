@@ -12,6 +12,9 @@ class NES:
         self.cartridge = None
         self.ram = [0xFF] * 2048
 
+    def reset(self):
+        self.cpu.reset()
+
     def start(self):        
         if (self.cartridge is None):
             raise RuntimeError("No ROM loaded!")
@@ -24,7 +27,11 @@ class NES:
             #time.sleep(0.016)
 
     def frame(self):
+        self.step()                
+
+    def step(self):
         self.cpu.step()
+        self.ppu.step(self.cpu.instruction_cycles)
 
     def load_cartridge(self, filename):
         self.cartridge = Cartridge(filename)

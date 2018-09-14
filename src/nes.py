@@ -11,6 +11,7 @@ class NES:
         self.ppu = PPU(self)
         self.cartridge = None
         self.ram = [0xFF] * 2048
+        self._clock = 0
 
     def reset(self):
         self.cpu.reset()
@@ -30,8 +31,13 @@ class NES:
         self.step()                
 
     def step(self):
-        self.cpu.step()
-        self.ppu.step(self.cpu.instruction_cycles)
+        self.cpu.step()        
+
+    def consume_cycles(self, cycles):
+        # Update clock with instruction cycles.
+        self._clock = (self._clock+cycles)&0xFFFFFFFF
+
+        self.ppu.step(cycles)
 
     def load_cartridge(self, filename):
         self.cartridge = Cartridge(filename)

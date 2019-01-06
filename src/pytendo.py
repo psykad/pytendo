@@ -1,5 +1,7 @@
 import os
 from nes import NES
+import pygame
+from pygame.locals import *
 
 import sys
 from PyQt5 import QtWidgets
@@ -17,7 +19,7 @@ emulator.start()
 class Window(QtWidgets.QMainWindow):
     def __init__(self):
         super(Window, self).__init__()
-        self.setWindowTitle("PyTendo")
+        self.setWindowTitle("Pytendo")
         self.setGeometry(50, 50, 500, 300)
 
         #######################################################################
@@ -99,4 +101,5 @@ class Window(QtWidgets.QMainWindow):
 
 app = QtWidgets.QApplication(sys.argv)
 gui = Window()
+pygame.init()
 sys.exit(app.exec_())

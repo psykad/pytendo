@@ -31,7 +31,7 @@ class MMU:
 
         # Mirrors of PPU registers (repeat every 8 bytes)
         if (address >= 0x2008 and address <= 0x3FFF):
-            raise NotImplementedError(f"Read @ Address: ${hex(address)}")
+            return self._system.ppu.read_byte(0x2000+(address%8))
 
         # APU and I/O registers
         if (address >= 0x4000 and address <= 0x4017):
@@ -82,7 +82,8 @@ class MMU:
 
         # Mirrors of PPU registers (repeat every 8 bytes)
         if (address >= 0x2008 and address <= 0x3FFF):
-            raise NotImplementedError(f"Write @ Address: ${hex(address)} / Byte: {hex(byte)}")
+            self._system.ppu.write_byte(0x2000+(address%8), byte)
+            return
 
         # APU and I/O registers
         if (address >= 0x4000 and address <= 0x4017):

@@ -41,7 +41,7 @@ class CPU:
         # Fetch next instruction.
         pc = self._pc
         self._current_instruction = pc
-        #print(f"PC: {format(pc,'x').upper()} / SP: {format(self._sp,'x').upper()} / A: {format(self._a,'x').upper()} / X: {format(self._x,'x').upper()} / Y: {format(self._y,'x').upper()}")
+        # print(f"PC: {format(pc,'x').upper()} / SP: {format(self._sp,'x').upper()} / A: {format(self._a,'x').upper()} / X: {format(self._x,'x').upper()} / Y: {format(self._y,'x').upper()}")
         self._debug_log.write(f"{format(pc,'x').upper()}\n")
         op_code = self._get_next_byte()
 

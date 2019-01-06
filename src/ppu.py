@@ -37,13 +37,18 @@ class PPU:
             return value
         elif (address == self.OAMDATA):
             return self.registers[self.OAMDATA]
+        elif (address == self.PPUSCROLL):
+            return self.registers[self.PPUSCROLL]
         elif (address == self.PPUDATA):
-            return self.registers[self.PPUDATA]
+            value = self.ram[self.registers[self.PPUADDR]] = byte
+            increment = 32 if (self.registers[self.PPUCTRL]&0x04 > 0) else 1
+            self.registers[self.PPUADDR] = (self.registers[self.PPUADDR]+increment)&0xFF
+            return value
 
         raise RuntimeError(f"Unknown Read @ Address: ${hex(address)}")
 
     def write_byte(self, address, byte):
-        print(f"PPU: Write {hex(address)} / {hex(byte)}")
+        # print(f"PPU: Write {hex(address)} / {hex(byte)}")
         if (address == self.PPUCTRL):
             self.registers[self.PPUCTRL] = byte
             return
@@ -60,16 +65,28 @@ class PPU:
             self.registers[self.PPUSCROLL] = byte
             return
         elif (address == self.PPUADDR):
-            self.registers[self.PPUADDR] = byte
+            # 16-bits will be written to this register before accessing PPUDATA.
+            # MSB written first, then LSB 2nd.
+            value = ((self.registers[self.PPUADDR]<<8)+byte)&0xFFFF
+            print(f"ppuaddress byte ${hex(byte)} value ${hex(value)}")
+            self.registers[self.PPUADDR] = value
             return
         elif (address == self.PPUDATA):
-            self.registers[self.PPUDATA] = byte
+            self.ram[self.registers[self.PPUADDR]] = byte
+            increment = 32 if (self.registers[self.PPUCTRL]&0x04 > 0) else 1
+            self.registers[self.PPUADDR] = (self.registers[self.PPUADDR]+increment)&0xFF
             return
         elif (address == self.OAMDMA):
             self.registers[self.OAMDMA] = byte
             return
 
         raise RuntimeError(f"Unknown Write @ Address: ${hex(address)} / Byte: {hex(byte)}")
+
+    def _read_byte(self, address):
+        return
+
+    def _write_byte(self, address, byte):
+        return
 
     def step(self, cycles):
         # Note: 1 CPU cycle = 3 PPU cycles
